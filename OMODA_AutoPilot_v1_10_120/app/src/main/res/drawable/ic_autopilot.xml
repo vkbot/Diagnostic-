@@ -1,0 +1,24 @@
+<?xml version="1.0" encoding="utf-8"?>
+<!-- Иконка «Помощник»: руль на тёмном фоне в акцентном цвете -->
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="108dp"
+    android:height="108dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <path
+        android:fillColor="#0B0F14"
+        android:pathData="M0,0h24v24h-24z" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#29D3FF"
+        android:strokeWidth="1.6"
+        android:pathData="M4,12 a8,8 0 1,0 16,0 a8,8 0 1,0 -16,0" />
+    <path
+        android:fillColor="#00000000"
+        android:strokeColor="#29D3FF"
+        android:strokeWidth="1.6"
+        android:pathData="M4,12 L20,12 M12,12 L12,20" />
+    <path
+        android:fillColor="#29D3FF"
+        android:pathData="M10,12 a2,2 0 1,0 4,0 a2,2 0 1,0 -4,0" />
+</vector>
