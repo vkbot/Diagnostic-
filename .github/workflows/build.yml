@@ -76,7 +76,7 @@ jobs:
           SFTP_HOST: ${{ secrets.SFTP_HOST }}
           SFTP_PORT: ${{ secrets.SFTP_PORT }}
           SFTP_USER: ${{ secrets.SFTP_USER }}
-          SFTP_KEY: ${{ secrets.SFTP_KEY }}
+          SFTP_KEY_B64: ${{ secrets.SFTP_KEY_B64 }}
           SFTP_KNOWN_HOSTS: ${{ secrets.SFTP_KNOWN_HOSTS }}
         run: |
           set -euo pipefail
@@ -86,7 +86,7 @@ jobs:
           BATCH="$RUNNER_TEMP/sftp_batch"
           trap 'rm -f "$KEY" "$KH" "$BATCH"' EXIT
 
-          printf '%s\n' "$SFTP_KEY" > "$KEY"
+          printf '%s' "$SFTP_KEY_B64" | base64 -d > "$KEY"
           printf '%s\n' "$SFTP_KNOWN_HOSTS" > "$KH"
           chmod 600 "$KEY"
 
