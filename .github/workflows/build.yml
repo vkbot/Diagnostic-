@@ -28,6 +28,26 @@ jobs:
           mkdir -p app/src/main/assets
           printf '%s' "$SFTP_READ_KEY_B64" > app/src/main/assets/sftp_read_key.b64
 
+      - name: Put SFTP config into app assets
+        env:
+          SFTP_HOST: ${{ secrets.SFTP_HOST }}
+          SFTP_PORT: ${{ secrets.SFTP_PORT }}
+          SFTP_USER: ${{ secrets.SFTP_USER }}
+          SFTP_KNOWN_HOSTS: ${{ secrets.SFTP_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$SFTP_HOST"
+          test -n "$SFTP_USER"
+          test -n "$SFTP_KNOWN_HOSTS"
+          KH_B64=$(printf '%s' "$SFTP_KNOWN_HOSTS" | base64 -w0)
+          mkdir -p app/src/main/assets
+          {
+            echo "host=$SFTP_HOST"
+            echo "port=${SFTP_PORT:-22}"
+            echo "user=$SFTP_USER"
+            echo "known_hosts_b64=$KH_B64"
+          } > app/src/main/assets/sftp_config.txt
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -50,9 +70,9 @@ jobs:
       - name: Build release APK
         run: gradle assembleRelease --no-daemon
 
-      - name: Remove read-only key from workspace
+      - name: Remove read-only key and SFTP config from workspace
         if: always()
-        run: rm -f app/src/main/assets/sftp_read_key.b64
+        run: rm -f app/src/main/assets/sftp_read_key.b64 app/src/main/assets/sftp_config.txt
 
       - name: Download AOSP platform test key
         run: |
