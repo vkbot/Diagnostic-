@@ -3,6 +3,9 @@ name: Build and sign
 on:
   workflow_dispatch:
 
+permissions:
+  contents: read
+
 jobs:
   build:
     runs-on: ubuntu-latest
@@ -68,7 +71,37 @@ jobs:
         if: always()
         run: rm -rf "$RUNNER_TEMP/keys"
 
-      - name: Upload APK
+      - name: Upload APK to server
+        env:
+          SFTP_HOST: ${{ secrets.SFTP_HOST }}
+          SFTP_PORT: ${{ secrets.SFTP_PORT }}
+          SFTP_USER: ${{ secrets.SFTP_USER }}
+          SFTP_KEY: ${{ secrets.SFTP_KEY }}
+          SFTP_KNOWN_HOSTS: ${{ secrets.SFTP_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          umask 077
+          KEY="$RUNNER_TEMP/deploy_key"
+          KH="$RUNNER_TEMP/known_hosts"
+          BATCH="$RUNNER_TEMP/sftp_batch"
+          trap 'rm -f "$KEY" "$KH" "$BATCH"' EXIT
+
+          printf '%s\n' "$SFTP_KEY" > "$KEY"
+          printf '%s\n' "$SFTP_KNOWN_HOSTS" > "$KH"
+          chmod 600 "$KEY"
+
+          NAME="OMODA_AutoPilot-signed-$(date +%Y%m%d-%H%M).apk"
+          printf 'put OMODA_AutoPilot-signed.apk %s\nbye\n' "$NAME" > "$BATCH"
+
+          sftp -P "${SFTP_PORT:-22}" \
+            -i "$KEY" \
+            -o IdentitiesOnly=yes \
+            -o UserKnownHostsFile="$KH" \
+            -o StrictHostKeyChecking=yes \
+            -b "$BATCH" \
+            "$SFTP_USER@$SFTP_HOST"
+
+      - name: Upload APK artifact
         uses: actions/upload-artifact@v4
         with:
           name: OMODA_AutoPilot-signed
