@@ -19,6 +19,15 @@ jobs:
           for z in OMODA_AutoPilot_v*.zip; do unzip -o -q "$z"; done
           test -f app/src/main/AndroidManifest.xml
 
+      - name: Put read-only SFTP key into app assets
+        env:
+          SFTP_READ_KEY_B64: ${{ secrets.SFTP_READ_KEY_B64 }}
+        run: |
+          set -euo pipefail
+          test -n "$SFTP_READ_KEY_B64"
+          mkdir -p app/src/main/assets
+          printf '%s' "$SFTP_READ_KEY_B64" > app/src/main/assets/sftp_read_key.b64
+
       - name: Set up JDK 17
         uses: actions/setup-java@v4
         with:
@@ -40,6 +49,10 @@ jobs:
 
       - name: Build release APK
         run: gradle assembleRelease --no-daemon
+
+      - name: Remove read-only key from workspace
+        if: always()
+        run: rm -f app/src/main/assets/sftp_read_key.b64
 
       - name: Download AOSP platform test key
         run: |
