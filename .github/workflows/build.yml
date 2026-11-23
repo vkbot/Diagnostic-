@@ -44,7 +44,7 @@ jobs:
           {
             echo "host=$SFTP_HOST"
             echo "port=${SFTP_PORT:-22}"
-            echo "user=$SFTP_USER"
+           echo "user=apkreader"
             echo "known_hosts_b64=$KH_B64"
           } > app/src/main/assets/sftp_config.txt
 
