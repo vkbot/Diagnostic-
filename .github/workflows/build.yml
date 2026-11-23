@@ -1,3 +1,4 @@
+```yaml
 name: Build and sign
 
 on:
@@ -44,7 +45,7 @@ jobs:
           {
             echo "host=$SFTP_HOST"
             echo "port=${SFTP_PORT:-22}"
-           echo "user=apkreader"
+            echo "user=apkreader"
             echo "known_hosts_b64=$KH_B64"
           } > app/src/main/assets/sftp_config.txt
 
@@ -123,9 +124,9 @@ jobs:
           printf '%s\n' "$SFTP_KNOWN_HOSTS" > "$KH"
           chmod 600 "$KEY"
 
-                  VC=$(grep -oP 'versionCode = \K[0-9]+' app/build.gradle.kts | head -1)
-        NAME="OMODA_AutoPilot-signed-${VC}-$(date +%Y%m%d-%H%M).apk"
-        printf 'put OMODA_AutoPilot-signed.apk %s\nbye\n' "$NAME" > "$BATCH"
+          VC=$(grep -oP 'versionCode = \K[0-9]+' app/build.gradle.kts | head -1)
+          NAME="OMODA_AutoPilot-signed-${VC}-$(date +%Y%m%d-%H%M).apk"
+          printf 'put OMODA_AutoPilot-signed.apk %s\nbye\n' "$NAME" > "$BATCH"
 
           sftp -P "${SFTP_PORT:-22}" \
             -i "$KEY" \
@@ -140,3 +141,4 @@ jobs:
         with:
           name: OMODA_AutoPilot-signed
           path: OMODA_AutoPilot-signed.apk
+```
