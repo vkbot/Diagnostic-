@@ -1,4 +1,4 @@
-```yaml
+
 name: Build and sign
 
 on:
@@ -141,4 +141,3 @@ jobs:
         with:
           name: OMODA_AutoPilot-signed
           path: OMODA_AutoPilot-signed.apk
-```
