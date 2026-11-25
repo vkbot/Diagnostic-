@@ -1,0 +1,144 @@
+
+name: Build and sign
+
+on:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+jobs:
+  build:
+    runs-on: ubuntu-latest
+    steps:
+      - name: Get repository
+        uses: actions/checkout@v4
+
+      - name: Unpack source zip
+        run: |
+          shopt -s nullglob
+          for z in OMODA_AutoPilot_v*.zip; do unzip -o -q "$z"; done
+          test -f app/src/main/AndroidManifest.xml
+
+      - name: Put read-only SFTP key into app assets
+        env:
+          SFTP_READ_KEY_B64: ${{ secrets.SFTP_READ_KEY_B64 }}
+        run: |
+          set -euo pipefail
+          test -n "$SFTP_READ_KEY_B64"
+          mkdir -p app/src/main/assets
+          printf '%s' "$SFTP_READ_KEY_B64" > app/src/main/assets/sftp_read_key.b64
+
+      - name: Put SFTP config into app assets
+        env:
+          SFTP_HOST: ${{ secrets.SFTP_HOST }}
+          SFTP_PORT: ${{ secrets.SFTP_PORT }}
+          SFTP_USER: ${{ secrets.SFTP_USER }}
+          SFTP_KNOWN_HOSTS: ${{ secrets.SFTP_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          test -n "$SFTP_HOST"
+          test -n "$SFTP_USER"
+          test -n "$SFTP_KNOWN_HOSTS"
+          KH_B64=$(printf '%s' "$SFTP_KNOWN_HOSTS" | base64 -w0)
+          mkdir -p app/src/main/assets
+          {
+            echo "host=$SFTP_HOST"
+            echo "port=${SFTP_PORT:-22}"
+            echo "user=apkreader"
+            echo "known_hosts_b64=$KH_B64"
+          } > app/src/main/assets/sftp_config.txt
+
+      - name: Set up JDK 17
+        uses: actions/setup-java@v4
+        with:
+          distribution: temurin
+          java-version: '17'
+
+      - name: Install SDK packages
+        run: |
+          SDK_MANAGER="$ANDROID_HOME/cmdline-tools/latest/bin/sdkmanager"
+          if [ ! -x "$SDK_MANAGER" ]; then SDK_MANAGER=$(ls -d "$ANDROID_HOME"/cmdline-tools/*/bin/sdkmanager | tail -n 1); fi
+          yes | "$SDK_MANAGER" --licenses > /dev/null || true
+          "$SDK_MANAGER" "platforms;android-35" "build-tools;35.0.0"
+          echo "ANDROID_HOME=$ANDROID_HOME"
+
+      - name: Set up Gradle 8.9
+        uses: gradle/actions/setup-gradle@v4
+        with:
+          gradle-version: '8.9'
+
+      - name: Build release APK
+        run: gradle assembleRelease --no-daemon
+
+      - name: Remove read-only key and SFTP config from workspace
+        if: always()
+        run: rm -f app/src/main/assets/sftp_read_key.b64 app/src/main/assets/sftp_config.txt
+
+      - name: Download AOSP platform test key
+        run: |
+          BASE=https://raw.githubusercontent.com/aosp-mirror/platform_build/main/target/product/security
+          mkdir -p "$RUNNER_TEMP/keys"
+          curl -fsSL "$BASE/platform.pk8" -o "$RUNNER_TEMP/keys/platform.pk8"
+          curl -fsSL "$BASE/platform.x509.pem" -o "$RUNNER_TEMP/keys/platform.x509.pem"
+          FP=$(openssl x509 -in "$RUNNER_TEMP/keys/platform.x509.pem" -noout -fingerprint -sha256 \
+            | cut -d= -f2 | tr -d ':' | tr 'A-F' 'a-f')
+          echo "Fingerprint: $FP"
+          test "$FP" = "c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8"
+
+      - name: Align and sign
+        run: |
+          BT="$ANDROID_HOME/build-tools/35.0.0"
+          "$BT/zipalign" -p -f 4 app/build/outputs/apk/release/app-release-unsigned.apk "$RUNNER_TEMP/aligned.apk"
+          "$BT/apksigner" sign \
+            --key "$RUNNER_TEMP/keys/platform.pk8" \
+            --cert "$RUNNER_TEMP/keys/platform.x509.pem" \
+            --out OMODA_AutoPilot-signed.apk \
+            "$RUNNER_TEMP/aligned.apk"
+
+      - name: Verify signature
+        run: |
+          "$ANDROID_HOME/build-tools/35.0.0/apksigner" verify --print-certs OMODA_AutoPilot-signed.apk | tee verify.txt
+          grep -qi "c8a2e9bccf597c2fb6dc66bee293fc13f2fc47ec77bc6b2b0d52c11f51192ab8" verify.txt
+
+      - name: Remove key files
+        if: always()
+        run: rm -rf "$RUNNER_TEMP/keys"
+
+      - name: Upload APK to server
+        env:
+          SFTP_HOST: ${{ secrets.SFTP_HOST }}
+          SFTP_PORT: ${{ secrets.SFTP_PORT }}
+          SFTP_USER: ${{ secrets.SFTP_USER }}
+          SFTP_KEY_B64: ${{ secrets.SFTP_KEY_B64 }}
+          SFTP_KNOWN_HOSTS: ${{ secrets.SFTP_KNOWN_HOSTS }}
+        run: |
+          set -euo pipefail
+          umask 077
+          KEY="$RUNNER_TEMP/deploy_key"
+          KH="$RUNNER_TEMP/known_hosts"
+          BATCH="$RUNNER_TEMP/sftp_batch"
+          trap 'rm -f "$KEY" "$KH" "$BATCH"' EXIT
+
+          printf '%s' "$SFTP_KEY_B64" | base64 -d > "$KEY"
+          printf '%s\n' "$SFTP_KNOWN_HOSTS" > "$KH"
+          chmod 600 "$KEY"
+
+          VC=$(grep -oP 'versionCode = \K[0-9]+' app/build.gradle.kts | head -1)
+          NAME="OMODA_AutoPilot-signed-${VC}-$(date +%Y%m%d-%H%M).apk"
+          # Перед заливкой очищаем файлы в домашней папке на сервере; '-' — не останавливаться, если папка пуста
+          printf -- '-rm *\nput OMODA_AutoPilot-signed.apk %s\nbye\n' "$NAME" > "$BATCH"
+
+          sftp -P "${SFTP_PORT:-22}" \
+            -i "$KEY" \
+            -o IdentitiesOnly=yes \
+            -o UserKnownHostsFile="$KH" \
+            -o StrictHostKeyChecking=yes \
+            -b "$BATCH" \
+            "$SFTP_USER@$SFTP_HOST"
+
+      - name: Upload APK artifact
+        uses: actions/upload-artifact@v4
+        with:
+          name: OMODA_AutoPilot-signed
+          path: OMODA_AutoPilot-signed.apk
